@@ -1,3 +1,13 @@
 .DS_Store
 *.log
 .env
+
+# Service repos — cloned by setup.sh, each has its own git
+bt-auth-service/
+bt-booking-service/
+bt-pricing-service/
+bt-payment-service/
+bt-cargo-ledger/
+bt-ops-web/
+bt-driver-app/
+bt-shipper-app/

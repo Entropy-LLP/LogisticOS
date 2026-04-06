@@ -9,10 +9,10 @@
 | bt-cargo-ledger | bt-cargo-ledger/ | 3005 | Active | Multi-leg tracking, checkpoint handshakes, blockchain proof |
 | bt-driver-app | bt-driver-app/ | — | Active | React Native (Expo) — driver-facing |
 | bt-shipper-app | bt-shipper-app/ | — | Active | React Native (Expo) — shipper/customer-facing |
-| bt-admin-web | bt-admin-web/ | 3000 | Active | Next.js — ops/admin panel |
+| bt-ops-web | bt-ops-web/ | 3000 | Active | Next.js — ops/admin panel |
 
 ## Local Dev Ports
-- 3000 — bt-admin-web
+- 3000 — bt-ops-web
 - 3001 — bt-auth-service
 - 3002 — bt-booking-service
 - 3003 — bt-pricing-service

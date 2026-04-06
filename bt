@@ -1,0 +1,272 @@
+#!/usr/bin/env bash
+# =============================================================================
+#  bt — BharatTruck / LogisticOS developer CLI
+#
+#  Usage:  ./bt <command> [service]
+#
+#  Run from anywhere — the script resolves the repo root automatically.
+#  All heavy lifting delegates to the root Makefile.
+# =============================================================================
+set -euo pipefail
+
+# ── Resolve repo root ─────────────────────────────────────────────────────────
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$REPO_ROOT"
+
+# ── ANSI Colors (skip if not a tty) ──────────────────────────────────────────
+if [ -t 1 ]; then
+  RESET="\033[0m"; BOLD="\033[1m"; DIM="\033[2m"
+  GREEN="\033[32m"; YELLOW="\033[33m"; CYAN="\033[36m"
+  RED="\033[31m"; BLUE="\033[34m"; MAGENTA="\033[35m"
+else
+  RESET=""; BOLD=""; DIM=""; GREEN=""; YELLOW=""
+  CYAN=""; RED=""; BLUE=""; MAGENTA=""
+fi
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+info()    { printf "${CYAN}  →${RESET}  %s\n" "$*"; }
+success() { printf "${GREEN}  ✓${RESET}  %s\n" "$*"; }
+warn()    { printf "${YELLOW}  ⚠${RESET}  %s\n" "$*"; }
+err()     { printf "${RED}  ✗${RESET}  %s\n" "$*" >&2; }
+divider() { printf "${DIM}──────────────────────────────────────────────────────────${RESET}\n"; }
+
+make_bt() { make --no-print-directory -C "$REPO_ROOT" "$@"; }
+
+# ── Service validation ────────────────────────────────────────────────────────
+ALL_SERVICES="auth booking pricing payment cargo admin driver shipper"
+
+svc_port() {
+  case "$1" in
+    auth)    echo 3001 ;;
+    booking) echo 3002 ;;
+    pricing) echo 3003 ;;
+    payment) echo 3004 ;;
+    cargo)   echo 3005 ;;
+    admin)   echo 3000 ;;
+    *)       echo "" ;;
+  esac
+}
+
+svc_dir() {
+  case "$1" in
+    auth)    echo "bt-auth-service" ;;
+    booking) echo "bt-booking-service" ;;
+    pricing) echo "bt-pricing-service" ;;
+    payment) echo "bt-payment-service" ;;
+    cargo)   echo "bt-cargo-ledger" ;;
+    admin)   echo "bt-ops-web" ;;
+    driver)  echo "bt-driver-app" ;;
+    shipper) echo "bt-shipper-app" ;;
+    *)       echo "" ;;
+  esac
+}
+
+assert_service() {
+  local svc="$1"
+  if [ -z "$(svc_dir "$svc")" ]; then
+    err "Unknown service: '${svc}'"
+    printf "  Valid services: ${BOLD}%s${RESET}\n" "$ALL_SERVICES"
+    exit 1
+  fi
+}
+
+# ── Banner ────────────────────────────────────────────────────────────────────
+banner() {
+  printf "\n${BOLD}${BLUE}BharatTruck${RESET} ${DIM}/ LogisticOS${RESET}  ${MAGENTA}dev CLI${RESET}\n"
+  divider
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  Commands
+# ══════════════════════════════════════════════════════════════════════════════
+
+cmd_help() {
+  banner
+  printf "${BOLD}USAGE${RESET}\n"
+  printf "  ${CYAN}./bt${RESET} <command> [service]\n\n"
+
+  printf "${BOLD}COMMANDS${RESET}\n"
+  divider
+  printf "  ${GREEN}%-18s${RESET} %s\n" "setup"          "Install all deps + start Redis  (first-time onboarding)"
+  printf "  ${GREEN}%-18s${RESET} %s\n" "start [svc|all]" "Start one service or all in background"
+  printf "  ${GREEN}%-18s${RESET} %s\n" "stop  [svc|all]" "Stop one service or all"
+  printf "  ${GREEN}%-18s${RESET} %s\n" "restart <svc>"   "Restart a specific service"
+  printf "  ${GREEN}%-18s${RESET} %s\n" "logs [svc]"      "Tail logs for a service (or all)"
+  printf "  ${GREEN}%-18s${RESET} %s\n" "status"          "Per-service: port, PID, UP/DOWN, health"
+  printf "  ${GREEN}%-18s${RESET} %s\n" "health"          "Hit /health on all web services"
+  printf "  ${GREEN}%-18s${RESET} %s\n" "test <svc>"      "Run quick smoke test  (auth | pricing | cargo)"
+  printf "  ${GREEN}%-18s${RESET} %s\n" "docker-up"       "Start all services via docker-compose"
+  printf "  ${GREEN}%-18s${RESET} %s\n" "docker-down"     "Stop and remove docker-compose containers"
+  printf "  ${GREEN}%-18s${RESET} %s\n" "help"            "Show this help"
+  divider
+
+  printf "\n${BOLD}SERVICES${RESET}\n"
+  divider
+  printf "  ${CYAN}%-10s${RESET}  %-6s  %s\n" "auth"    ":3001" "bt-auth-service      (Fastify + JWT + Redis)"
+  printf "  ${CYAN}%-10s${RESET}  %-6s  %s\n" "booking" ":3002" "bt-booking-service   (Fastify + WebSocket)"
+  printf "  ${CYAN}%-10s${RESET}  %-6s  %s\n" "pricing" ":3003" "bt-pricing-service   (Fastify, stateless)"
+  printf "  ${CYAN}%-10s${RESET}  %-6s  %s\n" "payment" ":3004" "bt-payment-service   (Fastify + Razorpay)"
+  printf "  ${CYAN}%-10s${RESET}  %-6s  %s\n" "cargo"   ":3005" "bt-cargo-ledger      (Fastify + Polygon)"
+  printf "  ${CYAN}%-10s${RESET}  %-6s  %s\n" "admin"   ":3000" "bt-ops-web           (Next.js 14)"
+  printf "  ${CYAN}%-10s${RESET}  %-6s  %s\n" "driver"  "—     " "bt-driver-app        (Expo 51)"
+  printf "  ${CYAN}%-10s${RESET}  %-6s  %s\n" "shipper" "—     " "bt-shipper-app       (Expo 51)"
+  divider
+  printf "\n${DIM}Logs:  /tmp/bt-logs/<service>.log${RESET}\n"
+  printf "${DIM}PIDs:  /tmp/bt-<service>.pid${RESET}\n\n"
+}
+
+cmd_setup() {
+  banner
+  printf "${BOLD}Running first-time setup...${RESET}\n\n"
+  info "Installing all dependencies (this may take a minute)"
+  make_bt install-all
+  info "Starting Redis"
+  make_bt redis
+  printf "\n"
+  success "Setup complete."
+  printf "  Run ${BOLD}./bt start all${RESET} to start everything.\n\n"
+}
+
+cmd_start() {
+  local target="${1:-all}"
+  banner
+  if [ "$target" = "all" ]; then
+    info "Starting all 6 web services in background"
+    make_bt start
+  else
+    assert_service "$target"
+    info "Starting $(svc_dir "$target")  (foreground — Ctrl+C to stop)"
+    make_bt "start-${target}"
+  fi
+}
+
+cmd_stop() {
+  local target="${1:-all}"
+  banner
+  if [ "$target" = "all" ]; then
+    info "Stopping all services"
+    make_bt stop
+  else
+    assert_service "$target"
+    local pidfile="/tmp/bt-${target}.pid"
+    local dir
+    dir="$(svc_dir "$target")"
+    if [ -f "$pidfile" ]; then
+      local pid
+      pid="$(cat "$pidfile")"
+      if kill -0 "$pid" 2>/dev/null; then
+        kill "$pid"
+        rm -f "$pidfile"
+        success "Stopped ${dir} (was PID ${pid})"
+      else
+        warn "${dir}: PID file exists but process is gone — cleaning up"
+        rm -f "$pidfile"
+      fi
+    else
+      warn "${dir} does not appear to be running (no PID file at ${pidfile})"
+    fi
+  fi
+}
+
+cmd_restart() {
+  local svc="${1:-}"
+  if [ -z "$svc" ]; then
+    err "restart requires a service name"
+    printf "  Usage: ${BOLD}./bt restart <service>${RESET}\n"
+    printf "  Services: ${BOLD}auth booking pricing payment cargo admin${RESET}\n"
+    exit 1
+  fi
+  assert_service "$svc"
+  banner
+  info "Restarting $(svc_dir "$svc")"
+  make_bt "restart-${svc}"
+}
+
+cmd_logs() {
+  local svc="${1:-}"
+  banner
+  if [ -z "$svc" ]; then
+    info "Tailing ALL service logs  (Ctrl+C to stop)"
+    make_bt logs
+  else
+    assert_service "$svc"
+    info "Tailing $(svc_dir "$svc") logs  (Ctrl+C to stop)"
+    make_bt "logs-${svc}"
+  fi
+}
+
+cmd_status() {
+  banner
+  make_bt status
+}
+
+cmd_health() {
+  banner
+  make_bt health
+}
+
+cmd_test() {
+  local svc="${1:-}"
+  if [ -z "$svc" ]; then
+    err "test requires a service name"
+    printf "  Usage: ${BOLD}./bt test <service>${RESET}\n"
+    printf "  Testable: ${BOLD}auth  pricing  cargo${RESET}\n"
+    exit 1
+  fi
+  banner
+  case "$svc" in
+    auth|pricing|cargo) make_bt "test-${svc}" ;;
+    *)
+      err "No quick test defined for '${svc}'"
+      printf "  Testable services: ${BOLD}auth  pricing  cargo${RESET}\n"
+      exit 1
+      ;;
+  esac
+}
+
+cmd_docker_up() {
+  banner
+  if ! command -v docker &>/dev/null; then
+    err "docker is not installed or not in PATH"
+    exit 1
+  fi
+  info "Building and starting all containers (docker compose up --build -d)"
+  docker compose -f "$REPO_ROOT/docker-compose.yml" up --build -d
+  printf "\n"
+  success "Containers started."
+  printf "  Run ${BOLD}./bt docker-down${RESET} to stop.\n\n"
+}
+
+cmd_docker_down() {
+  banner
+  info "Stopping docker-compose containers"
+  docker compose -f "$REPO_ROOT/docker-compose.yml" down
+  printf "\n"
+  success "All containers stopped."
+  printf "\n"
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  Dispatch
+# ══════════════════════════════════════════════════════════════════════════════
+COMMAND="${1:-help}"
+shift 2>/dev/null || true
+
+case "$COMMAND" in
+  help|--help|-h)  cmd_help ;;
+  setup)           cmd_setup ;;
+  start)           cmd_start "${1:-all}" ;;
+  stop)            cmd_stop  "${1:-all}" ;;
+  restart)         cmd_restart "${1:-}" ;;
+  logs)            cmd_logs   "${1:-}" ;;
+  status)          cmd_status ;;
+  health)          cmd_health ;;
+  test)            cmd_test   "${1:-}" ;;
+  docker-up)       cmd_docker_up ;;
+  docker-down)     cmd_docker_down ;;
+  *)
+    err "Unknown command: '${COMMAND}'"
+    printf "  Run ${BOLD}./bt help${RESET} to see available commands.\n"
+    exit 1
+    ;;
+esac

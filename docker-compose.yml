@@ -1,0 +1,186 @@
+# =============================================================================
+#  BharatTruck / LogisticOS — Docker Compose (local containerised dev)
+#
+#  Usage:
+#    ./bt docker-up      (or: docker compose up --build -d)
+#    ./bt docker-down    (or: docker compose down)
+#
+#  Notes:
+#  - bt-driver-app and bt-shipper-app are Expo/React Native — not containerised.
+#    Run them with: ./bt start driver  /  ./bt start shipper
+#  - bt-ops-web production stage requires `output: 'standalone'` in next.config.js
+#    The dev stage (used here) works as-is.
+#  - Supabase runs remotely; override SUPABASE_URL if using a local instance.
+# =============================================================================
+
+services:
+
+  # ── Infrastructure ──────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Backend Services ────────────────────────────────────────────────────────
+  bt-auth-service:
+    build:
+      context: ./bt-auth-service
+      dockerfile: Dockerfile
+      target: development
+    image: bharattruck/bt-auth-service:dev
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: development
+      PORT: "3001"
+      OTP_DEV_MODE: "true"
+      REDIS_URL: redis://redis:6379
+      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:54321}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-dev-stub-key}
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-long-enough-for-local}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-refresh-secret-long-enough}
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./bt-auth-service/src:/app/src
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3001/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  bt-booking-service:
+    build:
+      context: ./bt-booking-service
+      dockerfile: Dockerfile
+      target: development
+    image: bharattruck/bt-booking-service:dev
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    environment:
+      NODE_ENV: development
+      PORT: "3002"
+      REDIS_URL: redis://redis:6379
+      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:54321}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-dev-stub-key}
+      PRICING_SERVICE_URL: http://bt-pricing-service:3003
+      CARGO_LEDGER_URL: http://bt-cargo-ledger:3005
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./bt-booking-service/src:/app/src
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3002/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  bt-pricing-service:
+    build:
+      context: ./bt-pricing-service
+      dockerfile: Dockerfile
+      target: development
+    image: bharattruck/bt-pricing-service:dev
+    restart: unless-stopped
+    ports:
+      - "3003:3003"
+    environment:
+      NODE_ENV: development
+      PORT: "3003"
+    volumes:
+      - ./bt-pricing-service/src:/app/src
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3003/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  bt-payment-service:
+    build:
+      context: ./bt-payment-service
+      dockerfile: Dockerfile
+      target: development
+    image: bharattruck/bt-payment-service:dev
+    restart: unless-stopped
+    ports:
+      - "3004:3004"
+    environment:
+      NODE_ENV: development
+      PORT: "3004"
+      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:54321}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-dev-stub-key}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
+    volumes:
+      - ./bt-payment-service/src:/app/src
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3004/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  bt-cargo-ledger:
+    build:
+      context: ./bt-cargo-ledger
+      dockerfile: Dockerfile
+      target: development
+    image: bharattruck/bt-cargo-ledger:dev
+    restart: unless-stopped
+    ports:
+      - "3005:3005"
+    environment:
+      NODE_ENV: development
+      PORT: "3005"
+      BLOCKCHAIN_ENABLED: "false"
+      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:54321}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-dev-stub-key}
+    volumes:
+      - ./bt-cargo-ledger/src:/app/src
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3005/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ── Frontend ─────────────────────────────────────────────────────────────────
+  bt-ops-web:
+    build:
+      context: ./bt-ops-web
+      dockerfile: Dockerfile
+      target: development
+    image: bharattruck/bt-ops-web:dev
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      PORT: "3000"
+      NEXT_PUBLIC_AUTH_URL: http://localhost:3001
+      NEXT_PUBLIC_BOOKING_URL: http://localhost:3002
+      NEXT_PUBLIC_PRICING_URL: http://localhost:3003
+    volumes:
+      - ./bt-ops-web/app:/app/app
+      - ./bt-ops-web/components:/app/components
+      - ./bt-ops-web/public:/app/public
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

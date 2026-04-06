@@ -4,7 +4,7 @@
 
 ```
                         ┌─────────────────┐
-                        │  bt-admin-web   │  Next.js ops panel
+                        │  bt-ops-web   │  Next.js ops panel
                         └────────┬────────┘
                                  │
               ┌──────────────────┼──────────────────┐
