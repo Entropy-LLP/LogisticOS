@@ -56,6 +56,7 @@ fail()    { printf "  ${RED}✗${RESET}  %s\n" "$*"; }
 # HTTPS requires a Personal Access Token stored somewhere.
 # For a dev team, SSH is cleaner.
 REPOS=(
+  "bt-gateway|git@github.com:deltaos1997/bt-gateway.git"
   "bt-auth-service|git@github.com:deltaos1997/bt-auth-service.git"
   "bt-booking-service|git@github.com:deltaos1997/bt-booking-service.git"
   "bt-pricing-service|git@github.com:deltaos1997/bt-pricing-service.git"
