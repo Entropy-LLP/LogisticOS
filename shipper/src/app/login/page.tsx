@@ -1,31 +1,15 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import Script from 'next/script'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/auth'
-import {
-  sendPhoneOtp,
-  verifyPhoneOtp,
-  googleSignIn,
-  emailRegister,
-  emailVerify,
-  emailLogin,
-  emailResendOtp,
-  sendMagicLink,
-  registerProfile,
-  setToken,
-  ApiError,
-  type AuthUser,
-} from '@/lib/api'
+import { getSupabaseClient } from '@/lib/supabase'
 
-const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ''
 const APP_ROLE = 'shipper'
 const POST_LOGIN_PATH = '/dashboard'
 
 type Tab = 'phone' | 'google' | 'email' | 'magic-link'
-type LoginHandler = (at: string, rt: string, u?: AuthUser) => void
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'phone', label: 'Phone' },
@@ -36,19 +20,14 @@ const TABS: { id: Tab; label: string }[] = [
 
 export default function LoginPage() {
   const [tab, setTab] = useState<Tab>('phone')
-  const [devToken, setDevToken] = useState('')
-  const { login, token, isReady } = useAuth()
+  const [awaitingRegistration, setAwaitingRegistration] = useState(false)
+  const { user, isReady } = useAuth()
   const router = useRouter()
 
   useEffect(() => {
-    if (isReady && token) router.replace(POST_LOGIN_PATH)
-  }, [isReady, token, router])
-
-  const handleLogin: LoginHandler = (accessToken, refreshToken, user) => {
-    login(accessToken, refreshToken, user)
-    toast.success('Signed in!')
-    router.push(POST_LOGIN_PATH)
-  }
+    if (!isReady || !user || awaitingRegistration) return
+    router.replace(POST_LOGIN_PATH)
+  }, [isReady, user, awaitingRegistration, router])
 
   return (
     <div className="flex items-center justify-center min-h-screen px-4">
@@ -80,36 +59,15 @@ export default function LoginPage() {
             ))}
           </div>
 
-          {tab === 'phone' && <PhoneOtpForm onLogin={handleLogin} />}
-          {tab === 'google' && <GoogleSignInForm onLogin={handleLogin} />}
-          {tab === 'email' && <EmailAuthForm onLogin={handleLogin} />}
+          {tab === 'phone' && (
+            <PhoneOtpForm
+              onAwaitingRegistration={setAwaitingRegistration}
+              onRegistered={() => router.push(POST_LOGIN_PATH)}
+            />
+          )}
+          {tab === 'google' && <GoogleSignInForm />}
+          {tab === 'email' && <EmailAuthForm />}
           {tab === 'magic-link' && <MagicLinkForm />}
-
-          <details className="mt-5 border-t border-gray-100 pt-4">
-            <summary className="text-xs text-gray-400 cursor-pointer select-none">
-              Dev: Paste JWT directly
-            </summary>
-            <div className="mt-3 space-y-3">
-              <textarea
-                value={devToken}
-                onChange={e => setDevToken(e.target.value)}
-                rows={3}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                placeholder="Paste JWT token..."
-              />
-              <button
-                onClick={() => {
-                  if (devToken.trim()) {
-                    handleLogin(devToken.trim(), '')
-                  }
-                }}
-                disabled={!devToken.trim()}
-                className="w-full h-9 bg-gray-800 text-white rounded-lg text-xs font-medium disabled:opacity-40"
-              >
-                Use Token
-              </button>
-            </div>
-          </details>
         </div>
       </div>
     </div>
@@ -118,23 +76,36 @@ export default function LoginPage() {
 
 // ─── Phone OTP ──────────────────────────────────────────────────
 
-function PhoneOtpForm({ onLogin }: { onLogin: LoginHandler }) {
+function PhoneOtpForm({
+  onAwaitingRegistration,
+  onRegistered,
+}: {
+  onAwaitingRegistration: (v: boolean) => void
+  onRegistered: () => void
+}) {
   const [phone, setPhone] = useState('')
   const [otp, setOtp] = useState('')
   const [step, setStep] = useState<'phone' | 'otp' | 'register'>('phone')
   const [loading, setLoading] = useState(false)
-  const [tokens, setTokens] = useState<{ access_token: string; refresh_token: string } | null>(null)
   const [name, setName] = useState('')
 
   async function handleSendOtp(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     try {
-      await sendPhoneOtp(phone)
-      toast.success('OTP sent! Check your phone (or server console in dev mode)')
+      const supabase = getSupabaseClient()
+      const { error } = await supabase.auth.signInWithOtp({
+        phone: `+91${phone}`,
+        options: {
+          // Requires Twilio creds in Supabase dashboard to deliver via SMS.
+          data: { role: APP_ROLE },
+        },
+      })
+      if (error) throw error
+      toast.success('OTP sent to your phone')
       setStep('otp')
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Failed to send OTP')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to send OTP')
     } finally {
       setLoading(false)
     }
@@ -144,15 +115,21 @@ function PhoneOtpForm({ onLogin }: { onLogin: LoginHandler }) {
     e.preventDefault()
     setLoading(true)
     try {
-      const data = await verifyPhoneOtp(phone, otp)
-      if (data.is_new_user) {
-        setTokens({ access_token: data.access_token, refresh_token: data.refresh_token })
+      const supabase = getSupabaseClient()
+      const { data, error } = await supabase.auth.verifyOtp({
+        phone: `+91${phone}`,
+        token: otp,
+        type: 'sms',
+      })
+      if (error) throw error
+
+      const isNewUser = !data.user?.user_metadata?.full_name
+      if (isNewUser) {
+        onAwaitingRegistration(true)
         setStep('register')
-      } else {
-        onLogin(data.access_token, data.refresh_token, data.user)
       }
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Failed to verify OTP')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to verify OTP')
     } finally {
       setLoading(false)
     }
@@ -160,14 +137,17 @@ function PhoneOtpForm({ onLogin }: { onLogin: LoginHandler }) {
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault()
-    if (!tokens) return
+    if (!name.trim()) return
     setLoading(true)
     try {
-      setToken(tokens.access_token)
-      const data = await registerProfile({ full_name: name, role: APP_ROLE })
-      onLogin(tokens.access_token, tokens.refresh_token, data.user)
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Failed to complete registration')
+      const supabase = getSupabaseClient()
+      // Sync full_name into auth metadata so future logins skip this step.
+      // The handle_user_metadata_update trigger syncs it to public.users.
+      await supabase.auth.updateUser({ data: { full_name: name, role: APP_ROLE } })
+      onAwaitingRegistration(false)
+      onRegistered()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save profile')
     } finally {
       setLoading(false)
     }
@@ -176,7 +156,7 @@ function PhoneOtpForm({ onLogin }: { onLogin: LoginHandler }) {
   if (step === 'register') {
     return (
       <form onSubmit={handleRegister} className="space-y-4">
-        <p className="text-sm text-gray-600">Welcome! Complete your profile to continue.</p>
+        <p className="text-sm text-gray-600">Welcome! Enter your name to continue.</p>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
           <input
@@ -195,7 +175,7 @@ function PhoneOtpForm({ onLogin }: { onLogin: LoginHandler }) {
           disabled={loading || !name.trim()}
           className="w-full h-11 bg-blue-600 text-white rounded-lg font-medium text-sm disabled:opacity-40"
         >
-          {loading ? 'Saving...' : 'Complete Registration'}
+          {loading ? 'Saving...' : 'Continue'}
         </button>
       </form>
     )
@@ -268,87 +248,56 @@ function PhoneOtpForm({ onLogin }: { onLogin: LoginHandler }) {
 
 // ─── Google Sign-In ─────────────────────────────────────────────
 
-declare global {
-  interface Window {
-    google?: {
-      accounts: {
-        id: {
-          initialize: (config: Record<string, unknown>) => void
-          renderButton: (el: HTMLElement, config: Record<string, unknown>) => void
-        }
-      }
-    }
-  }
-}
-
-function GoogleSignInForm({ onLogin }: { onLogin: LoginHandler }) {
-  const buttonRef = useRef<HTMLDivElement>(null)
-  const [gsiReady, setGsiReady] = useState(false)
+function GoogleSignInForm() {
   const [loading, setLoading] = useState(false)
 
-  const handleCredential = useCallback(
-    async (response: { credential: string }) => {
-      setLoading(true)
-      try {
-        const data = await googleSignIn(response.credential, APP_ROLE)
-        onLogin(data.access_token, data.refresh_token, data.user)
-      } catch (err) {
-        toast.error(err instanceof ApiError ? err.message : 'Google sign-in failed')
-      } finally {
-        setLoading(false)
-      }
-    },
-    [onLogin],
-  )
-
-  useEffect(() => {
-    if (!gsiReady || !buttonRef.current || !window.google) return
-    if (!GOOGLE_CLIENT_ID) return
-
-    window.google.accounts.id.initialize({
-      client_id: GOOGLE_CLIENT_ID,
-      callback: handleCredential,
-    })
-    window.google.accounts.id.renderButton(buttonRef.current, {
-      theme: 'outline',
-      size: 'large',
-      width: buttonRef.current.offsetWidth,
-      text: 'signin_with',
-    })
-  }, [gsiReady, handleCredential])
-
-  if (!GOOGLE_CLIENT_ID) {
-    return (
-      <div className="py-6 text-center">
-        <p className="text-sm text-gray-500">
-          Google Sign-In not configured.
-        </p>
-        <p className="text-xs text-gray-400 mt-1">
-          Set <code className="bg-gray-100 px-1 rounded">NEXT_PUBLIC_GOOGLE_CLIENT_ID</code> in .env.local
-        </p>
-      </div>
-    )
+  async function handleGoogleSignIn() {
+    setLoading(true)
+    try {
+      const supabase = getSupabaseClient()
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+          queryParams: { access_type: 'offline', prompt: 'consent' },
+        },
+      })
+      if (error) throw error
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Google sign-in failed')
+      setLoading(false)
+    }
   }
 
   return (
     <div className="space-y-4 py-2">
-      <Script
-        src="https://accounts.google.com/gsi/client"
-        strategy="afterInteractive"
-        onLoad={() => setGsiReady(true)}
-      />
-      <div ref={buttonRef} className="w-full flex justify-center" />
-      {loading && <p className="text-sm text-gray-500 text-center">Signing in...</p>}
-      {!gsiReady && !loading && (
-        <p className="text-sm text-gray-400 text-center">Loading Google Sign-In...</p>
-      )}
+      <button
+        onClick={handleGoogleSignIn}
+        disabled={loading}
+        className="w-full h-11 flex items-center justify-center gap-3 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 transition-colors"
+      >
+        {loading ? (
+          <div className="h-4 w-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+        ) : (
+          <svg className="w-5 h-5" viewBox="0 0 24 24">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+          </svg>
+        )}
+        {loading ? 'Redirecting to Google...' : 'Continue with Google'}
+      </button>
+      <p className="text-xs text-center text-gray-400">
+        Google OAuth must be enabled in the Supabase dashboard.
+      </p>
     </div>
   )
 }
 
 // ─── Email / Password ───────────────────────────────────────────
 
-function EmailAuthForm({ onLogin }: { onLogin: LoginHandler }) {
+function EmailAuthForm() {
   const [mode, setMode] = useState<'login' | 'register' | 'verify'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -360,15 +309,19 @@ function EmailAuthForm({ onLogin }: { onLogin: LoginHandler }) {
     e.preventDefault()
     setLoading(true)
     try {
-      const data = await emailLogin(email, password)
-      onLogin(data.access_token, data.refresh_token, data.user)
-    } catch (err) {
-      if (err instanceof ApiError && err.message.toLowerCase().includes('not verified')) {
-        toast.info('Email not verified. Enter the OTP sent to your email.')
-        setMode('verify')
-      } else {
-        toast.error(err instanceof ApiError ? err.message : 'Login failed')
+      const supabase = getSupabaseClient()
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) {
+        if (error.message.toLowerCase().includes('email not confirmed')) {
+          toast.info('Email not confirmed. Check your inbox for a verification code.')
+          await supabase.auth.resend({ type: 'signup', email })
+          setMode('verify')
+        } else {
+          throw error
+        }
       }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Login failed')
     } finally {
       setLoading(false)
     }
@@ -378,11 +331,20 @@ function EmailAuthForm({ onLogin }: { onLogin: LoginHandler }) {
     e.preventDefault()
     setLoading(true)
     try {
-      await emailRegister(email, password, name, APP_ROLE)
-      toast.success('Verification OTP sent to your email!')
+      const supabase = getSupabaseClient()
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { role: APP_ROLE, full_name: name },
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
+      })
+      if (error) throw error
+      toast.success('Verification code sent to your email')
       setMode('verify')
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Registration failed')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Registration failed')
     } finally {
       setLoading(false)
     }
@@ -392,10 +354,11 @@ function EmailAuthForm({ onLogin }: { onLogin: LoginHandler }) {
     e.preventDefault()
     setLoading(true)
     try {
-      const data = await emailVerify(email, otp)
-      onLogin(data.access_token, data.refresh_token, data.user)
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Verification failed')
+      const supabase = getSupabaseClient()
+      const { error } = await supabase.auth.verifyOtp({ email, token: otp, type: 'signup' })
+      if (error) throw error
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Verification failed')
     } finally {
       setLoading(false)
     }
@@ -403,10 +366,12 @@ function EmailAuthForm({ onLogin }: { onLogin: LoginHandler }) {
 
   async function handleResend() {
     try {
-      await emailResendOtp(email)
-      toast.success('OTP resent!')
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Failed to resend')
+      const supabase = getSupabaseClient()
+      const { error } = await supabase.auth.resend({ type: 'signup', email })
+      if (error) throw error
+      toast.success('Verification code resent')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to resend')
     }
   }
 
@@ -434,7 +399,7 @@ function EmailAuthForm({ onLogin }: { onLogin: LoginHandler }) {
           {loading ? 'Verifying...' : 'Verify Email'}
         </button>
         <button type="button" onClick={handleResend} className="w-full text-sm text-blue-600 hover:text-blue-700">
-          Resend OTP
+          Resend code
         </button>
         <button
           type="button"
@@ -558,11 +523,19 @@ function MagicLinkForm() {
     e.preventDefault()
     setLoading(true)
     try {
-      await sendMagicLink(email, APP_ROLE)
+      const supabase = getSupabaseClient()
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          data: { role: APP_ROLE },
+        },
+      })
+      if (error) throw error
       setSent(true)
       toast.success('Magic link sent!')
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Failed to send')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to send')
     } finally {
       setLoading(false)
     }
@@ -575,9 +548,7 @@ function MagicLinkForm() {
         <p className="text-sm text-gray-700">
           Sign-in link sent to <strong>{email}</strong>
         </p>
-        <p className="text-xs text-gray-400">
-          Check your email (or server console in dev mode)
-        </p>
+        <p className="text-xs text-gray-400">Click the link in your email to sign in.</p>
         <button
           onClick={() => { setSent(false); setEmail('') }}
           className="text-sm text-blue-600 hover:text-blue-700"
@@ -591,7 +562,7 @@ function MagicLinkForm() {
   return (
     <form onSubmit={handleSend} className="space-y-4">
       <p className="text-sm text-gray-600">
-        We&apos;ll send you a sign-in link -- no password needed.
+        We&apos;ll send you a sign-in link — no password needed.
       </p>
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>

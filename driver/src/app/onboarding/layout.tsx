@@ -14,15 +14,15 @@ const STEPS = [
 ] as const
 
 export default function OnboardingLayout({ children }: { children: React.ReactNode }) {
-  const { token, isReady } = useAuth()
+  const { user, isReady } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
 
   useEffect(() => {
-    if (isReady && !token) {
+    if (isReady && !user) {
       router.replace('/login')
     }
-  }, [isReady, token, router])
+  }, [isReady, user, router])
 
   if (!isReady) {
     return (
@@ -32,7 +32,7 @@ export default function OnboardingLayout({ children }: { children: React.ReactNo
     )
   }
 
-  if (!token) return null
+  if (!user) return null
 
   const currentIndex = STEPS.findIndex(s => pathname.startsWith(s.path))
   const stepNum = currentIndex === -1 ? 0 : currentIndex

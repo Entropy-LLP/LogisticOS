@@ -8,10 +8,10 @@ import { toast } from 'sonner'
 export default function Navbar() {
   const router = useRouter()
   const pathname = usePathname()
-  const { logout } = useAuth()
+  const { signOut } = useAuth()
 
-  function handleLogout() {
-    logout()
+  async function handleLogout() {
+    await signOut()
     toast.success('Logged out')
     router.push('/login')
   }

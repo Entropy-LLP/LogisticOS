@@ -6,12 +6,12 @@ import { useAuth } from '@/lib/auth'
 
 export default function Home() {
   const router = useRouter()
-  const { token, isReady } = useAuth()
+  const { user, isReady } = useAuth()
 
   useEffect(() => {
     if (!isReady) return
-    router.replace(token ? '/available' : '/login')
-  }, [token, isReady, router])
+    router.replace(user ? '/available' : '/login')
+  }, [user, isReady, router])
 
   return (
     <div className="flex items-center justify-center min-h-screen">

@@ -1,94 +1,54 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import {
-  getToken,
-  setToken as saveToken,
-  clearToken,
-  getRefreshToken,
-  setRefreshToken as saveRefreshToken,
-  clearRefreshToken,
-  getMe,
-  refreshAccessToken,
-  type AuthUser,
-} from './api'
+import type { Session, User } from '@supabase/supabase-js'
+import { getSupabaseClient } from './supabase'
 
 type AuthContextType = {
-  token: string | null
-  user: AuthUser | null
+  user: User | null
+  session: Session | null
   isReady: boolean
-  login: (accessToken: string, refreshToken: string, user?: AuthUser) => void
-  logout: () => void
+  signOut: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType>({
-  token: null,
   user: null,
+  session: null,
   isReady: false,
-  login: () => {},
-  logout: () => {},
+  signOut: async () => {},
 })
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setTokenState] = useState<string | null>(null)
-  const [user, setUser] = useState<AuthUser | null>(null)
+  const [user, setUser] = useState<User | null>(null)
+  const [session, setSession] = useState<Session | null>(null)
   const [isReady, setIsReady] = useState(false)
 
   useEffect(() => {
-    async function init() {
-      const stored = getToken()
-      if (!stored) {
-        setIsReady(true)
-        return
-      }
+    const supabase = getSupabaseClient()
 
-      setTokenState(stored)
-
-      try {
-        const data = await getMe()
-        setUser(data.user)
-      } catch {
-        const rt = getRefreshToken()
-        if (rt) {
-          try {
-            const { access_token } = await refreshAccessToken(rt)
-            saveToken(access_token)
-            setTokenState(access_token)
-            const data = await getMe()
-            setUser(data.user)
-          } catch {
-            clearToken()
-            clearRefreshToken()
-            setTokenState(null)
-          }
-        } else {
-          clearToken()
-          setTokenState(null)
-        }
-      }
-
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+      setUser(session?.user ?? null)
       setIsReady(true)
-    }
+    })
 
-    init()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+      setUser(session?.user ?? null)
+    })
+
+    return () => subscription.unsubscribe()
   }, [])
 
-  function login(accessToken: string, refreshToken: string, userData?: AuthUser) {
-    saveToken(accessToken)
-    if (refreshToken) saveRefreshToken(refreshToken)
-    setTokenState(accessToken)
-    if (userData) setUser(userData)
-  }
-
-  function logout() {
-    clearToken()
-    clearRefreshToken()
-    setTokenState(null)
+  async function signOut() {
+    const supabase = getSupabaseClient()
+    await supabase.auth.signOut()
+    setSession(null)
     setUser(null)
   }
 
   return (
-    <AuthContext.Provider value={{ token, user, isReady, login, logout }}>
+    <AuthContext.Provider value={{ user, session, isReady, signOut }}>
       {children}
     </AuthContext.Provider>
   )

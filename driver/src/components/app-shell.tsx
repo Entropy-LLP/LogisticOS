@@ -36,15 +36,15 @@ const NAV_ITEMS = [
 ]
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { token, isReady, logout } = useAuth()
+  const { user, isReady, signOut } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
 
   useEffect(() => {
-    if (isReady && !token) {
+    if (isReady && !user) {
       router.replace('/login')
     }
-  }, [isReady, token, router])
+  }, [isReady, user, router])
 
   if (!isReady) {
     return (
@@ -54,7 +54,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     )
   }
 
-  if (!token) return null
+  if (!user) return null
 
   return (
     <div className="h-full flex flex-col">
@@ -62,7 +62,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <header className="sticky top-0 z-30 bg-white border-b border-gray-200 px-4 h-14 flex items-center justify-between">
         <h1 className="font-bold text-lg text-gray-900">BharatTruck</h1>
         <button
-          onClick={() => { logout(); router.replace('/login') }}
+          onClick={() => { signOut(); router.replace('/login') }}
           className="text-sm text-gray-500 hover:text-red-600 transition-colors px-3 py-1.5"
         >
           Logout

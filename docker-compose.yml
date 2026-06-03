@@ -12,11 +12,16 @@
 #    The dev stage (used here) works as-is.
 #  - Supabase runs remotely; override SUPABASE_URL if using a local instance.
 #
+#  Auth:
+#  - All auth flows are handled directly by Supabase Auth on the frontend.
+#  - Backend services verify Supabase-issued JWTs using SUPABASE_JWT_SECRET
+#    (available at: Supabase Dashboard > Settings > API > JWT Secret).
+#
 #  API Gateway:
 #  - All external traffic enters through bt-gateway on port 8080.
 #  - Backend services are only reachable from inside Docker's network.
 #  - In local dev the service ports (3001-3005) are still exposed so that
-#    `make test-auth`, `make health`, and direct curl debugging still work.
+#    `make health` and direct curl debugging still work.
 #    In production, remove those port mappings entirely.
 # =============================================================================
 
@@ -84,12 +89,10 @@ services:
     environment:
       NODE_ENV: development
       PORT: "3001"
-      OTP_DEV_MODE: "true"
       REDIS_URL: redis://redis:6379
       SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:54321}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-dev-stub-key}
-      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-long-enough-for-local}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-refresh-secret-long-enough}
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-dev-supabase-jwt-secret}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2}
     depends_on:
       redis:
@@ -121,7 +124,7 @@ services:
       REDIS_URL: redis://redis:6379
       SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:54321}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-dev-stub-key}
-      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-long-enough-for-local}
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-dev-supabase-jwt-secret}
       PRICING_SERVICE_URL: http://bt-pricing-service:3003
       CARGO_LEDGER_URL: http://bt-cargo-ledger:3005
     depends_on:
@@ -220,13 +223,34 @@ services:
     environment:
       NODE_ENV: development
       NEXT_PUBLIC_API_URL: http://localhost:8080
-      NEXT_PUBLIC_GOOGLE_CLIENT_ID: "752385541585-hg3qa9jgmvufie9osn5qu6eptvh1dc4n.apps.googleusercontent.com"
+      NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL:-https://rxbdzbcndpzznvqcbimg.supabase.co}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
     depends_on:
       bt-auth-service:
         condition: service_started
     volumes:
       - ./driver/src:/app/src
       - ./driver/public:/app/public
+
+  shipper-app:
+    build:
+      context: ./shipper
+      dockerfile: Dockerfile
+      target: development
+    image: bharattruck/shipper-app:dev
+    restart: unless-stopped
+    ports:
+      - "3011:3000"
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+      NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL:-https://rxbdzbcndpzznvqcbimg.supabase.co}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+    depends_on:
+      bt-auth-service:
+        condition: service_started
+    volumes:
+      - ./shipper/src:/app/src
 
   bt-ops-web:
     build:
@@ -241,13 +265,12 @@ services:
       NODE_ENV: development
       PORT: "3000"
       NEXT_PUBLIC_API_URL: http://localhost:8080
-      # TODO: remove once bt-ops-web is fully migrated to NEXT_PUBLIC_API_URL
-      NEXT_PUBLIC_AUTH_URL: http://localhost:8080
-      NEXT_PUBLIC_BOOKING_URL: http://localhost:8080
-      NEXT_PUBLIC_PRICING_URL: http://localhost:8080
+      NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL:-https://rxbdzbcndpzznvqcbimg.supabase.co}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
     volumes:
       - ./bt-ops-web/app:/app/app
       - ./bt-ops-web/components:/app/components
+      - ./bt-ops-web/lib:/app/lib
       - ./bt-ops-web/public:/app/public
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:3000 || exit 1"]

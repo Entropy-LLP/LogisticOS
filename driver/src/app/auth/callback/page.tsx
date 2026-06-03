@@ -2,33 +2,36 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { toast } from 'sonner'
-import { useAuth } from '@/lib/auth'
-import { verifyMagicLink, ApiError } from '@/lib/api'
+import { getSupabaseClient } from '@/lib/supabase'
 
 export default function AuthCallbackPage() {
   const router = useRouter()
-  const { login } = useAuth()
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    const supabase = getSupabaseClient()
     const params = new URLSearchParams(window.location.search)
-    const token = params.get('token')
-    if (!token) {
-      setError('No token found in URL')
-      return
-    }
+    const code = params.get('code')
 
-    verifyMagicLink(token)
-      .then(data => {
-        login(data.access_token, data.refresh_token, data.user)
-        toast.success('Signed in!')
-        router.replace('/available')
+    if (code) {
+      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+        if (error) {
+          setError(error.message)
+        } else {
+          router.replace('/available')
+        }
       })
-      .catch(err => {
-        setError(err instanceof ApiError ? err.message : 'Failed to verify magic link')
+    } else {
+      // Implicit flow (hash fragment) — check for an active session
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) {
+          router.replace('/available')
+        } else {
+          setError('Authentication failed — no session found.')
+        }
       })
-  }, [router, login])
+    }
+  }, [router])
 
   if (error) {
     return (
@@ -47,7 +50,7 @@ export default function AuthCallbackPage() {
     <div className="flex items-center justify-center min-h-screen">
       <div className="text-center">
         <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto" />
-        <p className="text-sm text-gray-500 mt-4">Verifying...</p>
+        <p className="text-sm text-gray-500 mt-4">Signing you in…</p>
       </div>
     </div>
   )
