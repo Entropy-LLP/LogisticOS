@@ -76,6 +76,9 @@ services:
       target: development
     image: bharattruck/bt-auth-service:dev
     restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     ports:
       - "3001:3001"
     environment:
@@ -107,6 +110,9 @@ services:
       target: development
     image: bharattruck/bt-booking-service:dev
     restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     ports:
       - "3002:3002"
     environment:
@@ -202,6 +208,26 @@ services:
       start_period: 15s
 
   # ── Frontend ─────────────────────────────────────────────────────────────────
+  driver-app:
+    build:
+      context: ./driver
+      dockerfile: Dockerfile
+      target: development
+    image: bharattruck/driver-app:dev
+    restart: unless-stopped
+    ports:
+      - "3010:3000"
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+      NEXT_PUBLIC_GOOGLE_CLIENT_ID: "752385541585-hg3qa9jgmvufie9osn5qu6eptvh1dc4n.apps.googleusercontent.com"
+    depends_on:
+      bt-auth-service:
+        condition: service_started
+    volumes:
+      - ./driver/src:/app/src
+      - ./driver/public:/app/public
+
   bt-ops-web:
     build:
       context: ./bt-ops-web
