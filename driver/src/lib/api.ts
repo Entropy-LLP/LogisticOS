@@ -1,4 +1,7 @@
-import type { Booking, Quote, NegotiationEntry } from './types'
+import type {
+  Booking, Quote, NegotiationEntry,
+  OnboardingProfile, OnboardingStatus, Vehicle, License, Insurance, BankAccount,
+} from './types'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 const TOKEN_KEY = 'bt_driver_token'
@@ -357,4 +360,118 @@ export function registerProfile(body: {
 
 export function authLogout() {
   return authRequest<{ message: string }>('/auth/logout', { method: 'POST' })
+}
+
+// ── Onboarding ──────────────────────────────────────────────
+
+export function getOnboardingProfile(): Promise<OnboardingProfile> {
+  return request<OnboardingProfile>('/onboarding/profile')
+}
+
+export function updateDriverProfile(body: {
+  full_name?: string
+  photo_url?: string
+  languages?: string[]
+  home_base_city?: string
+  home_base_lat?: number
+  home_base_lng?: number
+}) {
+  return request<{ driver: OnboardingProfile['driver'] }>('/onboarding/profile', {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
+export function getOnboardingStatus(): Promise<OnboardingStatus> {
+  return request<OnboardingStatus>('/onboarding/status')
+}
+
+// Vehicles
+
+export function createVehicle(body: {
+  rc_number: string
+  rc_storage_path?: string
+  vehicle_photos?: string[]
+  capacity_tons?: number
+  body_type?: string
+  axle_config?: string
+  maker_model?: string
+  fuel_type?: string
+  rc_expiry?: string
+}): Promise<{ vehicle: Vehicle }> {
+  return request('/onboarding/vehicle', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function updateVehicle(vehicleId: string, body: Record<string, unknown>): Promise<{ vehicle: Vehicle }> {
+  return request(`/onboarding/vehicle/${vehicleId}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
+export function getVehicles(): Promise<{ vehicles: Vehicle[] }> {
+  return request('/onboarding/vehicles')
+}
+
+// License
+
+export function submitLicense(body: {
+  dl_number: string
+  dl_storage_path?: string
+  vehicle_classes?: string[]
+  expiry_date?: string
+}): Promise<{ license: License }> {
+  return request('/onboarding/license', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function updateLicense(body: Record<string, unknown>): Promise<{ license: License }> {
+  return request('/onboarding/license', {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
+// Insurance
+
+export function submitInsurance(vehicleId: string, body: {
+  policy_number: string
+  provider?: string
+  storage_path?: string
+  expiry_date?: string
+}): Promise<{ insurance: Insurance }> {
+  return request(`/onboarding/vehicle/${vehicleId}/insurance`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+// Bank accounts
+
+export function linkBankAccount(body: {
+  account_number: string
+  ifsc: string
+  bank_name?: string
+  account_holder_name: string
+  is_primary?: boolean
+}): Promise<{ bank_account: BankAccount }> {
+  return request('/onboarding/bank-account', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function getBankAccounts(): Promise<{ bank_accounts: BankAccount[] }> {
+  return request('/onboarding/bank-accounts')
+}
+
+export function deleteBankAccount(accountId: string): Promise<{ message: string }> {
+  return request(`/onboarding/bank-account/${accountId}`, {
+    method: 'DELETE',
+  })
 }

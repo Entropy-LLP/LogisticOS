@@ -54,3 +54,113 @@ export interface NegotiationEntry {
   message: string | null
   created_at: string
 }
+
+// ── Onboarding types ────────────────────────────────────────
+
+export type VerificationBadge = 'pending' | 'verified' | 'premium'
+export type DocStatus = 'pending' | 'verified' | 'rejected'
+
+export interface DriverProfile {
+  id: string
+  user_id: string
+  is_available: boolean
+  truck_number: string | null
+  truck_type: string | null
+  truck_capacity_kg: number | null
+  photo_url: string | null
+  languages: string[]
+  home_base_city: string | null
+  home_base_lat: number | null
+  home_base_lng: number | null
+  verification_badge: VerificationBadge
+  average_rating: number
+  total_trips: number
+  total_earnings: number
+  created_at: string
+  updated_at: string
+}
+
+export interface Vehicle {
+  id: string
+  driver_id: string
+  rc_number: string
+  rc_storage_path: string | null
+  vehicle_photos: string[]
+  capacity_tons: number | null
+  body_type: string | null
+  axle_config: string | null
+  maker_model: string | null
+  fuel_type: string | null
+  rc_status: DocStatus
+  rc_expiry: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  driver_insurance?: Insurance[]
+}
+
+export interface License {
+  id: string
+  driver_id: string
+  dl_number: string
+  dl_storage_path: string | null
+  vehicle_classes: string[]
+  expiry_date: string | null
+  status: DocStatus
+  created_at: string
+  updated_at: string
+}
+
+export interface Insurance {
+  id: string
+  driver_id: string
+  vehicle_id: string
+  policy_number: string | null
+  provider: string | null
+  storage_path: string | null
+  expiry_date: string | null
+  status: DocStatus
+  created_at: string
+  updated_at: string
+}
+
+export interface BankAccount {
+  id: string
+  account_number_last4: string
+  ifsc: string
+  bank_name: string | null
+  account_holder_name: string
+  is_primary: boolean
+  verification_status: DocStatus
+  created_at: string
+}
+
+export interface OnboardingStatus {
+  verification_badge: VerificationBadge
+  checklist: {
+    profile_complete: boolean
+    license_submitted: boolean
+    license_verified: boolean
+    vehicle_registered: boolean
+    vehicle_verified: boolean
+    insurance_uploaded: boolean
+    bank_linked: boolean
+  }
+}
+
+export interface OnboardingProfile {
+  user: {
+    id: string
+    full_name: string | null
+    phone_number: string | null
+    email: string | null
+    avatar_url: string | null
+    city: string | null
+    state: string | null
+    kyc_status: string
+  }
+  driver: DriverProfile | null
+  license: License | null
+  vehicles: Vehicle[]
+  bank_accounts: BankAccount[]
+}
