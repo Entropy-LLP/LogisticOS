@@ -354,10 +354,10 @@ export function emailResendOtp(email: string) {
   })
 }
 
-export function sendMagicLink(email: string, role: string) {
+export function sendMagicLink(email: string, role: string, callbackUrl?: string) {
   return authRequest<{ message: string; expires_in: number }>('/auth/magic-link/send', {
     method: 'POST',
-    body: JSON.stringify({ email, role }),
+    body: JSON.stringify({ email, role, ...(callbackUrl ? { callback_url: callbackUrl } : {}) }),
   })
 }
 

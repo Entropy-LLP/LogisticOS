@@ -364,7 +364,7 @@ function EmailAuthForm({ onLogin }: { onLogin: LoginHandler }) {
       const data = await emailLogin(email, password)
       onLogin(data.access_token, data.refresh_token, data.user)
     } catch (err) {
-      if (err instanceof ApiError && err.message.toLowerCase().includes('not verified')) {
+      if (err instanceof ApiError && err.code === 'EMAIL_NOT_VERIFIED') {
         toast.info('Email not verified. Enter the OTP sent to your email.')
         setMode('verify')
       } else {
@@ -383,7 +383,12 @@ function EmailAuthForm({ onLogin }: { onLogin: LoginHandler }) {
       toast.success('Verification OTP sent to your email!')
       setMode('verify')
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Registration failed')
+      if (err instanceof ApiError && err.code === 'EMAIL_NOT_VERIFIED') {
+        toast.info('Email not verified yet. Enter the OTP sent to your email.')
+        setMode('verify')
+      } else {
+        toast.error(err instanceof ApiError ? err.message : 'Registration failed')
+      }
     } finally {
       setLoading(false)
     }
@@ -559,7 +564,7 @@ function MagicLinkForm() {
     e.preventDefault()
     setLoading(true)
     try {
-      await sendMagicLink(email, APP_ROLE)
+      await sendMagicLink(email, APP_ROLE, `${window.location.origin}/auth/callback`)
       setSent(true)
       toast.success('Magic link sent!')
     } catch (err) {
