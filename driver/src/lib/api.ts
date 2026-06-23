@@ -309,10 +309,10 @@ export function emailVerify(email: string, otp: string) {
   })
 }
 
-export function emailLogin(email: string, password: string) {
+export function emailLogin(email: string, password: string, role?: string) {
   return authRequest<AuthResponse>('/auth/email/login', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, ...(role ? { role } : {}) }),
   })
 }
 

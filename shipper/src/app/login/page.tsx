@@ -293,7 +293,11 @@ function GoogleSignInForm({ onLogin }: { onLogin: LoginHandler }) {
         const data = await googleSignIn(response.credential, APP_ROLE)
         onLogin(data.access_token, data.refresh_token, data.user)
       } catch (err) {
-        toast.error(err instanceof ApiError ? err.message : 'Google sign-in failed')
+        if (err instanceof ApiError && err.code === 'ROLE_MISMATCH') {
+          toast.error(err.message)
+        } else {
+          toast.error(err instanceof ApiError ? err.message : 'Google sign-in failed')
+        }
       } finally {
         setLoading(false)
       }
@@ -360,12 +364,14 @@ function EmailAuthForm({ onLogin }: { onLogin: LoginHandler }) {
     e.preventDefault()
     setLoading(true)
     try {
-      const data = await emailLogin(email, password)
+      const data = await emailLogin(email, password, APP_ROLE)
       onLogin(data.access_token, data.refresh_token, data.user)
     } catch (err) {
       if (err instanceof ApiError && err.code === 'EMAIL_NOT_VERIFIED') {
         toast.info('Email not verified. Enter the OTP sent to your email.')
         setMode('verify')
+      } else if (err instanceof ApiError && err.code === 'ROLE_MISMATCH') {
+        toast.error(err.message)
       } else {
         toast.error(err instanceof ApiError ? err.message : 'Login failed')
       }
@@ -385,6 +391,8 @@ function EmailAuthForm({ onLogin }: { onLogin: LoginHandler }) {
       if (err instanceof ApiError && err.code === 'EMAIL_NOT_VERIFIED') {
         toast.info('Email not verified yet. Enter the OTP sent to your email.')
         setMode('verify')
+      } else if (err instanceof ApiError && err.code === 'ROLE_MISMATCH') {
+        toast.error(err.message)
       } else {
         toast.error(err instanceof ApiError ? err.message : 'Registration failed')
       }
@@ -567,7 +575,11 @@ function MagicLinkForm() {
       setSent(true)
       toast.success('Magic link sent!')
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Failed to send')
+      if (err instanceof ApiError && err.code === 'ROLE_MISMATCH') {
+        toast.error(err.message)
+      } else {
+        toast.error(err instanceof ApiError ? err.message : 'Failed to send')
+      }
     } finally {
       setLoading(false)
     }

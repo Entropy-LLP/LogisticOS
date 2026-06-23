@@ -5,6 +5,7 @@
 #   /api/bookings/   -> BOOKING_SERVICE_URL
 #   /api/quotes/     -> BOOKING_SERVICE_URL
 #   /api/location/   -> BOOKING_SERVICE_URL  (driver GPS pings)
+#   /api/tracking/   -> TRACKING_SERVICE_URL (routes, ETA, pumps, fuel, alerts)
 #   /api/pricing/    -> PRICING_SERVICE_URL
 #   /api/payments/   -> PAYMENT_SERVICE_URL
 #   /api/cargo/      -> CARGO_SERVICE_URL
@@ -47,11 +48,14 @@ http {
   limit_req_zone $binary_remote_addr zone=api_zone:20m rate=60r/m;
   limit_req_status 429;
 
-  proxy_set_header Host              $host;
   proxy_set_header X-Real-IP         $remote_addr;
   proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
   proxy_set_header X-Forwarded-Proto $scheme;
   proxy_set_header X-Request-Id      $req_id;
+
+  # Required for proxying to HTTPS backends (Cloud Run, Render, etc.)
+  proxy_ssl_server_name on;
+  proxy_ssl_protocols TLSv1.2 TLSv1.3;
 
   proxy_next_upstream error timeout http_502 http_503;
   proxy_next_upstream_timeout 5s;
@@ -132,6 +136,7 @@ http {
       limit_req zone=otp_zone burst=10 nodelay;
       set $auth_upstream ${AUTH_SERVICE_URL};
       rewrite ^/api/auth/(.*) /auth/$1 break;
+      proxy_set_header Host ${AUTH_SERVICE_HOST};
       proxy_pass $auth_upstream;
     }
 
@@ -139,6 +144,7 @@ http {
       limit_req zone=api_zone burst=20 nodelay;
       set $auth_kyc_upstream ${AUTH_SERVICE_URL};
       rewrite ^/api/kyc/(.*) /kyc/$1 break;
+      proxy_set_header Host ${AUTH_SERVICE_HOST};
       proxy_pass $auth_kyc_upstream;
     }
 
@@ -146,6 +152,7 @@ http {
       limit_req zone=api_zone burst=20 nodelay;
       set $auth_onboarding_upstream ${AUTH_SERVICE_URL};
       rewrite ^/api/onboarding/(.*) /onboarding/$1 break;
+      proxy_set_header Host ${AUTH_SERVICE_HOST};
       proxy_pass $auth_onboarding_upstream;
     }
 
@@ -153,6 +160,7 @@ http {
       limit_req zone=api_zone burst=30 nodelay;
       set $booking_upstream ${BOOKING_SERVICE_URL};
       rewrite ^/api/bookings/(.*) /bookings/$1 break;
+      proxy_set_header Host ${BOOKING_SERVICE_HOST};
       proxy_pass $booking_upstream;
     }
 
@@ -160,6 +168,7 @@ http {
       limit_req zone=api_zone burst=30 nodelay;
       set $quotes_upstream ${BOOKING_SERVICE_URL};
       rewrite ^/api/quotes/(.*) /quotes/$1 break;
+      proxy_set_header Host ${BOOKING_SERVICE_HOST};
       proxy_pass $quotes_upstream;
     }
 
@@ -167,13 +176,23 @@ http {
       limit_req zone=api_zone burst=60 nodelay;
       set $location_upstream ${BOOKING_SERVICE_URL};
       rewrite ^/api/location/(.*) /location/$1 break;
+      proxy_set_header Host ${BOOKING_SERVICE_HOST};
       proxy_pass $location_upstream;
+    }
+
+    location /api/tracking/ {
+      limit_req zone=api_zone burst=30 nodelay;
+      set $tracking_upstream ${TRACKING_SERVICE_URL};
+      rewrite ^/api/tracking/(.*) /tracking/$1 break;
+      proxy_set_header Host ${TRACKING_SERVICE_HOST};
+      proxy_pass $tracking_upstream;
     }
 
     location /api/pricing/ {
       limit_req zone=api_zone burst=30 nodelay;
       set $pricing_upstream ${PRICING_SERVICE_URL};
       rewrite ^/api/pricing/(.*) /pricing/$1 break;
+      proxy_set_header Host ${PRICING_SERVICE_HOST};
       proxy_pass $pricing_upstream;
     }
 
@@ -181,6 +200,7 @@ http {
       limit_req zone=api_zone burst=20 nodelay;
       set $payment_upstream ${PAYMENT_SERVICE_URL};
       rewrite ^/api/payments/(.*) /payments/$1 break;
+      proxy_set_header Host ${PAYMENT_SERVICE_HOST};
       proxy_pass $payment_upstream;
     }
 
@@ -188,6 +208,7 @@ http {
       limit_req zone=api_zone burst=20 nodelay;
       set $cargo_upstream ${CARGO_SERVICE_URL};
       rewrite ^/api/cargo/(.*) /cargo/$1 break;
+      proxy_set_header Host ${CARGO_SERVICE_HOST};
       proxy_pass $cargo_upstream;
     }
 

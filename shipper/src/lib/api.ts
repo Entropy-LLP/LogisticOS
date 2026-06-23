@@ -282,6 +282,43 @@ export function getBookingLocation(bookingId: string): Promise<DriverLocation | 
   return request<DriverLocation | null>(`/location/booking/${bookingId}`)
 }
 
+// ── Maps & Tracking (bt-tracking-service, via gateway /api/tracking/) ─────────
+// Built to the frozen contract: snake_case fields, :bookingId path param.
+
+export interface RouteBounds {
+  ne_lat: number
+  ne_lng: number
+  sw_lat: number
+  sw_lng: number
+}
+
+export interface RouteData {
+  polyline: string
+  distance_m: number
+  static_duration_s: number
+  bounds: RouteBounds
+  cached: boolean
+}
+
+// Dev-only escape hatch: hit bt-tracking-service directly when the prod gateway
+// doesn't yet route /api/tracking/. Set NEXT_PUBLIC_TRACKING_BASE (e.g.
+// http://localhost:3006) for local testing. Unset in prod → goes via the gateway.
+const TRACKING_BASE = process.env.NEXT_PUBLIC_TRACKING_BASE
+
+/** Cached road route for a booking (computes server-side if missing). */
+export async function getRoute(bookingId: string): Promise<RouteData> {
+  if (TRACKING_BASE) {
+    const token = getToken()
+    const res = await fetch(`${TRACKING_BASE}/tracking/route/${bookingId}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    const json = await res.json().catch(() => ({ success: false, error: 'Network error' }))
+    if (!json.success) throw new ApiError(json.error || 'Failed to load route', json.code || 'UNKNOWN')
+    return json.data as RouteData
+  }
+  return request<RouteData>(`/tracking/route/${bookingId}`)
+}
+
 // ── Auth types ────────────────────────────────────────────────
 
 export interface AuthUser {
@@ -340,10 +377,10 @@ export function emailVerify(email: string, otp: string) {
   })
 }
 
-export function emailLogin(email: string, password: string) {
+export function emailLogin(email: string, password: string, role?: string) {
   return authRequest<AuthResponse>('/auth/email/login', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, ...(role ? { role } : {}) }),
   })
 }
 

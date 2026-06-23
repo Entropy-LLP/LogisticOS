@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, use } from 'react'
+import { useEffect, useState, useCallback, useMemo, use } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import {
@@ -11,15 +11,17 @@ import {
   counterQuote,
   cancelBooking,
   getBookingLocation,
+  getRoute,
   markAsPaid,
 } from '@/lib/api'
-import type { DriverLocation } from '@/lib/api'
+import type { DriverLocation, RouteData } from '@/lib/api'
 import { bookingStatusConfig, quoteStatusConfig } from '@/lib/status'
 import type { Booking, Quote } from '@/lib/types'
 import Navbar from '@/components/Navbar'
 import Spinner from '@/components/Spinner'
 import CounterModal from '@/components/CounterModal'
 import NegotiationHistory from '@/components/NegotiationHistory'
+import LiveTrackMap from '@/components/maps/LiveTrackMap'
 
 export default function BookingDetailPage({
   params,
@@ -418,16 +420,6 @@ function TripTrackingSection({ booking }: { booking: Booking }) {
   ]
   const currentIndex = steps.findIndex(s => s.key === booking.status)
 
-  function timeSince(dateStr: string): string {
-    const diff = Date.now() - new Date(dateStr).getTime()
-    const s = Math.floor(diff / 1000)
-    if (s < 60) return `${s}s ago`
-    const m = Math.floor(s / 60)
-    if (m < 60) return `${m}m ago`
-    const h = Math.floor(m / 60)
-    return `${h}h ${m % 60}m ago`
-  }
-
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
       <h2 className="font-semibold text-gray-900">Trip Status</h2>
@@ -447,56 +439,132 @@ function TripTrackingSection({ booking }: { booking: Booking }) {
         })}
       </div>
 
-      {/* Status-specific content */}
-      {booking.status === 'accepted' && (
-        <p className="text-sm text-gray-600">Driver has been assigned. Waiting for trip to start.</p>
-      )}
-
-      {booking.status === 'in_transit' && (
-        <div className="space-y-3">
-          {location ? (
-            <div className="bg-gray-50 rounded-lg p-3 space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-500">Location</span>
-                <span className="font-mono text-gray-700">{location.lat.toFixed(5)}, {location.lng.toFixed(5)}</span>
-              </div>
-              {location.speed_kmh !== null && (
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Speed</span>
-                  <span className="text-gray-700">{Math.round(location.speed_kmh)} km/h</span>
-                </div>
-              )}
-              {location.heading !== null && (
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Heading</span>
-                  <span className="text-gray-700">{Math.round(location.heading)}&deg;</span>
-                </div>
-              )}
-              <div className="flex justify-between">
-                <span className="text-gray-500">Last update</span>
-                <span className="text-gray-700">{timeSince(location.updated_at)}</span>
-              </div>
-            </div>
-          ) : pollError ? (
-            <p className="text-sm text-red-500">Could not fetch driver location.</p>
-          ) : (
-            <p className="text-sm text-gray-500">Waiting for driver location...</p>
-          )}
-        </div>
-      )}
-
-      {booking.status === 'completed' && (
-        <p className="text-sm text-green-700 font-medium">
-          Delivered {booking.completed_at ? `on ${new Date(booking.completed_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : 'successfully'}.
-        </p>
-      )}
-
-      {booking.status === 'paid' && (
-        <p className="text-sm text-emerald-700 font-medium">
-          Delivered and paid.
-        </p>
-      )}
+      {/* Live tracking map (Phase 1 — replaces the text-only location panel) */}
+      <ShipperTrackPanel booking={booking} location={location} pollError={pollError} />
     </div>
+  )
+}
+
+// --- Shipper live tracking panel (Phase 1: map + freshness caption) ---
+
+const STALE_AFTER_MS = 30_000
+
+function ageText(ms: number): string {
+  const s = Math.floor(ms / 1000)
+  if (s < 60) return `${s}s ago`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  return `${h}h ${m % 60}m ago`
+}
+
+function ShipperTrackPanel({
+  booking,
+  location,
+  pollError,
+}: {
+  booking: Booking
+  location: DriverLocation | null
+  pollError: boolean
+}) {
+  const origin = useMemo(
+    () => ({ lat: booking.source_lat, lng: booking.source_lng }),
+    [booking.source_lat, booking.source_lng],
+  )
+  const dest = useMemo(
+    () => ({ lat: booking.dest_lat, lng: booking.dest_lng }),
+    [booking.dest_lat, booking.dest_lng],
+  )
+
+  // Route is static for a booking → fetch once (server caches 6h). Degrades
+  // gracefully to pins-only if the tracking service isn't reachable.
+  const [route, setRoute] = useState<RouteData | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    getRoute(booking.id)
+      .then((r) => { if (!cancelled) setRoute(r) })
+      .catch(() => { if (!cancelled) setRoute(null) })
+    return () => { cancelled = true }
+  }, [booking.id])
+
+  const delivered = booking.status === 'completed' || booking.status === 'paid'
+  const ageMs = location ? Date.now() - new Date(location.updated_at).getTime() : Infinity
+  const fresh = ageMs <= STALE_AFTER_MS
+  // Truck shown only while a delivery is underway and we have a fix.
+  const driverPt = !delivered && location ? { lat: location.lat, lng: location.lng } : null
+
+  return (
+    <div className="space-y-2">
+      <LiveTrackMap origin={origin} dest={dest} encodedPolyline={route?.polyline} driver={driverPt} />
+      <TrackCaption
+        status={booking.status}
+        delivered={delivered}
+        completedAt={booking.completed_at}
+        location={location}
+        fresh={fresh}
+        ageMs={ageMs}
+        pollError={pollError}
+      />
+    </div>
+  )
+}
+
+function TrackCaption({
+  status,
+  delivered,
+  completedAt,
+  location,
+  fresh,
+  ageMs,
+  pollError,
+}: {
+  status: Booking['status']
+  delivered: boolean
+  completedAt: string | null
+  location: DriverLocation | null
+  fresh: boolean
+  ageMs: number
+  pollError: boolean
+}) {
+  if (delivered) {
+    return (
+      <p className="text-xs font-medium text-green-700">
+        {`Delivered ✓${
+          completedAt
+            ? ` · ${new Date(completedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`
+            : ''
+        }`}
+      </p>
+    )
+  }
+
+  // accepted, or in_transit before the first fix -> waiting for the driver.
+  if (!location) {
+    return (
+      <p className="text-xs text-gray-400">
+        {pollError
+          ? 'Could not fetch driver location — retrying…'
+          : status === 'accepted'
+            ? 'Driver assigned — waiting for the trip to start.'
+            : 'Waiting for driver to start sharing location…'}
+      </p>
+    )
+  }
+
+  if (fresh) {
+    return (
+      <p className="text-xs text-gray-500 flex items-center gap-1.5">
+        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse inline-block" />
+        {`Live · updated ${ageText(ageMs)}${location.speed_kmh !== null ? ` · ${Math.round(location.speed_kmh)} km/h` : ''}`}
+      </p>
+    )
+  }
+
+  return (
+    <p className="text-xs text-amber-600 flex items-center gap-1.5">
+      <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
+      {`Driver offline — last seen ${ageText(ageMs)}`}
+    </p>
   )
 }
 

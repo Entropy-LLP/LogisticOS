@@ -101,6 +101,12 @@ Related: [MAPS_TRACKING_PLAN.md](MAPS_TRACKING_PLAN.md) (design) · [MAPS_TRACKI
 - **Why:** the user has a tight budget; a budget is an *alert*, not a charge or a cap, so a low threshold gives the earliest possible warning of any real spend (expected spend is ₹0 — pilot usage is 2–13% of the free tier). Project-scoped rather than per-SKU-filtered for simplicity, and it usefully also catches any non-Maps spend (Cloud Run/auth sit near ₹0).
 - **Impact:** completes the Phase 0 cost guardrails. The **hard** cost stop remains the per-API quota caps in D-014; this budget only emails. Budget id `8f8f7da8-631a-481a-8e7a-d9f9a9378f48` on `billingAccounts/010E0C-E8C7B2-B83F76`. (Resolves the "budget TODO" noted in D-014.)
 
+### D-017 — bt-tracking-service deployed to Cloud Run; shipper calls it DIRECTLY (gateway redeploy pending)
+- **Date:** 2026-06-22 · **By:** user + session
+- **Decision:** Deployed `bt-tracking-service` to Cloud Run (asia-south1, `https://bt-tracking-service-752385541585.asia-south1.run.app`, `--allow-unauthenticated` but JWT-protected in-app; shares the prod Upstash Redis + prod Supabase + the same `695d…` JWT secret as booking). The shipper frontend calls it **directly** via `NEXT_PUBLIC_TRACKING_BASE` rather than through the gateway `/api/tracking/`. Frontends deployed to Vercel: shipper `https://shipper-five.vercel.app`, driver `https://driver-kappa-lemon.vercel.app`. Browser-key referrers now include `https://shipper-five.vercel.app/*` and `https://*.vercel.app/*`.
+- **Why:** ship real routes onto the deployed shipper without redeploying the prod gateway (it fronts all live traffic — too risky for this step).
+- **Impact:** **TEMPORARY** deviation from the contract (frontend should reach tracking via the gateway). **Follow-up:** redeploy `bt-gateway` with the `/api/tracking/` block (already in `nginx.conf.template`) + `TRACKING_SERVICE_URL` env, then drop `NEXT_PUBLIC_TRACKING_BASE` from the frontends so they go via the gateway. Tighten `*.vercel.app` to the real domains before public launch. The Cloud Run service env is set via plain `--set-env-vars` (matches booking-service); consider Secret Manager later.
+
 ---
 
 ## Template for new entries
