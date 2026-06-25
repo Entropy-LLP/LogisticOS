@@ -36,6 +36,14 @@ EXECUTE from PUBLIC/anon/authenticated (migration 013). Triggers still fire
 (Postgres doesn't check EXECUTE for trigger invocation), so signup/role sync are
 unaffected. Test: `supabase/tests/013_revoke_definer_function_execute_test.sql`.
 
+### `function_search_path_mutable` (WARN) — 5 app functions
+`accept_booking`, `complete_trip`, `start_trip`, `update_updated_at`,
+`update_updated_at_column` had no pinned `search_path`. They already fully-qualify
+all object refs (`public.*`) and use only `pg_catalog` builtins, so **fix:**
+`SET search_path = ''` (migration 014). The test calls the action functions with
+bogus UUIDs (early "not found" return, no mutation) to prove they still run.
+Test: `supabase/tests/014_pin_function_search_path_test.sql`.
+
 ---
 
 ## Residual (cannot fix from the `postgres` role)
