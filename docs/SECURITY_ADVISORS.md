@@ -28,6 +28,14 @@ infinite recursion (42P17). Unused (no anon/authenticated data queries).
 admin RLS via a SECURITY DEFINER `is_admin()` helper if ops-web ever queries
 data directly. Test: `supabase/tests/011_fix_users_rls_recursion_test.sql`.
 
+### `*_security_definer_function_executable` (WARN) — `handle_*` trigger functions
+`handle_new_user`, `handle_new_driver`, `handle_user_metadata_update`,
+`handle_user_role_update` are SECURITY DEFINER trigger functions that were
+EXECUTE-able by anon/authenticated via the default PUBLIC grant. **Fix:** revoked
+EXECUTE from PUBLIC/anon/authenticated (migration 013). Triggers still fire
+(Postgres doesn't check EXECUTE for trigger invocation), so signup/role sync are
+unaffected. Test: `supabase/tests/013_revoke_definer_function_execute_test.sql`.
+
 ---
 
 ## Residual (cannot fix from the `postgres` role)
@@ -51,3 +59,10 @@ PostGIS reference table (coordinate-system definitions). RLS is disabled and
   `supabase_admin` (e.g. via the Dashboard SQL editor if it has owner rights) or
   open a Supabase support request to enable RLS on `spatial_ref_sys`. Verify with
   `supabase/tests/012_secure_spatial_ref_sys_test.sql`.
+
+### `*_security_definer_function_executable` (WARN) — `st_estimatedextent` (×3)
+PostGIS functions owned by `supabase_admin`; EXECUTE cannot be revoked from the
+`postgres` role. Low risk (spatial extent estimation over geometry columns; no
+sensitive data). Resolve by applying the revoke as `supabase_admin`, or accept as
+a PostGIS residual. Bundled with the broader `extension_in_public` (PostGIS)
+note below.
