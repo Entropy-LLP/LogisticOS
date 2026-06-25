@@ -74,3 +74,35 @@ PostGIS functions owned by `supabase_admin`; EXECUTE cannot be revoked from the
 sensitive data). Resolve by applying the revoke as `supabase_admin`, or accept as
 a PostGIS residual. Bundled with the broader `extension_in_public` (PostGIS)
 note below.
+
+---
+
+## Needs a Dashboard toggle (no Auth-config write access from our tooling)
+
+### `auth_leaked_password_protection` (WARN)
+Leaked-password protection (HaveIBeenPwned check on sign-up / password change) is
+disabled. The Supabase MCP can't write Auth config, so enable it in the
+**Dashboard → Authentication → Sign In / Providers → Password → "Prevent use of
+leaked passwords"** (Password security / HIBP). One toggle, no code.
+Advisor: 0014_auth_leaked_password_protection.
+
+---
+
+## By design / accepted (no action needed)
+
+### `rls_enabled_no_policy` (INFO) — 21 tables
+RLS enabled with no policy = **deny-by-default**. Correct for this architecture:
+all data access is via the service-role backend (which bypasses RLS); no client
+queries these tables directly. Adding policies would only matter if the frontends
+queried Supabase directly — they don't. Leave as-is.
+
+### `pg_graphql_anon_/authenticated_table_exposed` (WARN)
+Flags that tables are visible to the auto GraphQL/REST API for anon/authenticated.
+Harmless here: every business table has RLS enabled (deny-by-default), so the
+exposure returns no rows. No action.
+
+### `extension_in_public` (WARN) — PostGIS
+PostGIS is installed in the `public` schema (Supabase default) and owns
+`spatial_ref_sys` + the `st_*` functions. Moving it to a separate schema needs
+owner privileges and is disruptive; not worth it for the pilot. The PostGIS-owned
+residuals are covered under "Residual" above.
