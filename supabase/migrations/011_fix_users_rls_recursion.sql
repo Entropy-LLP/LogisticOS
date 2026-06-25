@@ -1,0 +1,26 @@
+-- ============================================================
+-- Migration 011: Remove recursive RLS policy on public.users
+--
+-- The "Admins can view all users" SELECT policy used
+--   EXISTS (SELECT 1 FROM users u WHERE u.auth_id = auth.uid() AND u.role='admin')
+-- i.e. it queried `users` from within a policy ON `users` → infinite recursion
+-- (Postgres 42P17) whenever users-RLS is evaluated by a non-service role.
+-- (Surfaced by migration 010: the security_invoker views read users.)
+--
+-- It is also UNUSED: no frontend/ops code queries data tables via the
+-- anon/authenticated Supabase client. bt-ops-web uses Supabase only for auth;
+-- shipper/driver don't use the Supabase client at all. All data access is via
+-- the service-role backend (which bypasses RLS), and admin authorization is
+-- enforced there — not by this policy. Being recursive, the policy currently
+-- errors on every evaluation, so it provides no working access anyway.
+--
+-- Fix: drop it. The remaining policies are safe and non-recursive:
+--   - "Users can view own profile"   USING (auth.uid() = auth_id)
+--   - "Users can update own profile" USING/CHECK (auth.uid() = auth_id)
+--
+-- FUTURE: if ops-web gains direct (authenticated) admin data screens,
+-- reintroduce admin access with a recursion-safe SECURITY DEFINER is_admin()
+-- helper (Supabase's documented pattern), never a self-referencing subquery.
+-- ============================================================
+
+DROP POLICY IF EXISTS "Admins can view all users" ON public.users;
